@@ -5,6 +5,7 @@ namespace Laravel\Ai\Gateway\Concerns;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Sleep;
 use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Exceptions\ProviderConnectionException;
 use Laravel\Ai\Exceptions\ProviderOverloadedException;
@@ -23,7 +24,7 @@ trait HandlesFailoverErrors
     protected function withErrorHandling(string $providerName, Closure $callback): mixed
     {
         try {
-            return $callback();
+            return $this->retryOnceAfterDelay($callback);
         } catch (ConnectionException $connectionException) {
             throw ProviderConnectionException::forProvider(
                 $providerName, $connectionException->getCode(), $connectionException
@@ -64,6 +65,34 @@ trait HandlesFailoverErrors
             }
 
             throw $requestException;
+        }
+    }
+
+    /**
+     * Execute a callback, retrying it once when a rate limited or overloaded provider asks to retry shortly.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    protected function retryOnceAfterDelay(Closure $callback): mixed
+    {
+        try {
+            return $callback();
+        } catch (RequestException $requestException) {
+            $status = $requestException->response?->status();
+            $retryAfter = $requestException->response?->header('Retry-After');
+
+            // Waiting any longer than this is left to failover...
+            if (($status !== 429 && ! in_array($status, $this->overloadedStatusCodes())) ||
+                ! is_numeric($retryAfter) || $retryAfter < 0 || $retryAfter > 10) {
+                throw $requestException;
+            }
+
+            Sleep::for((int) ceil((float) $retryAfter))->seconds();
+
+            return $callback();
         }
     }
 
