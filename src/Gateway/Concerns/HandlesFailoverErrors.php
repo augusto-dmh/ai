@@ -5,11 +5,11 @@ namespace Laravel\Ai\Gateway\Concerns;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
-use Illuminate\Support\Sleep;
 use Laravel\Ai\Exceptions\InsufficientCreditsException;
 use Laravel\Ai\Exceptions\ProviderConnectionException;
 use Laravel\Ai\Exceptions\ProviderOverloadedException;
 use Laravel\Ai\Exceptions\RateLimitedException;
+use Throwable;
 
 trait HandlesFailoverErrors
 {
@@ -24,7 +24,12 @@ trait HandlesFailoverErrors
     protected function withErrorHandling(string $providerName, Closure $callback): mixed
     {
         try {
-            return $this->retryOnceAfterDelay($callback);
+            return retry(
+                2,
+                $callback,
+                fn (int $attempt, Throwable $exception): int => $this->retryAfterSeconds($exception) * 1000,
+                fn (Throwable $exception): bool => $this->retryAfterSeconds($exception) !== null,
+            );
         } catch (ConnectionException $connectionException) {
             throw ProviderConnectionException::forProvider(
                 $providerName, $connectionException->getCode(), $connectionException
@@ -69,31 +74,23 @@ trait HandlesFailoverErrors
     }
 
     /**
-     * Execute a callback, retrying it once when a rate limited or overloaded provider asks to retry shortly.
-     *
-     * @template T
-     *
-     * @param  Closure(): T  $callback
-     * @return T
+     * Get the short Retry-After delay of a rate limited or overloaded response, if it has one.
      */
-    protected function retryOnceAfterDelay(Closure $callback): mixed
+    protected function retryAfterSeconds(Throwable $exception): ?int
     {
-        try {
-            return $callback();
-        } catch (RequestException $requestException) {
-            $status = $requestException->response?->status();
-            $retryAfter = $requestException->response?->header('Retry-After');
-
-            // Waiting any longer than this is left to failover...
-            if (($status !== 429 && ! in_array($status, $this->overloadedStatusCodes())) ||
-                ! is_numeric($retryAfter) || $retryAfter < 0 || $retryAfter > 10) {
-                throw $requestException;
-            }
-
-            Sleep::for((int) ceil((float) $retryAfter))->seconds();
-
-            return $callback();
+        if (! $exception instanceof RequestException || $exception->response === null) {
+            return null;
         }
+
+        $status = $exception->response->status();
+
+        if ($status !== 429 && ! in_array($status, $this->overloadedStatusCodes())) {
+            return null;
+        }
+
+        $retryAfter = $exception->response->header('Retry-After');
+
+        return ctype_digit($retryAfter) && (int) $retryAfter <= 10 ? (int) $retryAfter : null;
     }
 
     /**

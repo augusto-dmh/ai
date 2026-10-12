@@ -138,5 +138,6 @@ test('a request is not retried without a short Retry-After on a failoverable sta
     'no header' => [429, []],
     'long delay' => [429, ['Retry-After' => '60']],
     'http date' => [429, ['Retry-After' => 'Wed, 21 Oct 2026 07:28:00 GMT']],
+    'fractional delay' => [429, ['Retry-After' => '1.5']],
     'client error' => [400, ['Retry-After' => '1']],
 ]);

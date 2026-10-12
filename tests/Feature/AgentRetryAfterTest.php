@@ -32,17 +32,3 @@ test('a rate limited provider is retried after its Retry-After delay before fail
     Event::assertNotDispatched(AgentFailedOver::class);
     Http::assertSentCount(2);
 });
-
-test('a rate limited provider asking for a long wait fails over right away', function (): void {
-    Http::fakeSequence()
-        ->push(status: 429, headers: ['Retry-After' => '60'])
-        ->pushResponse(fakeGroqResponse('Hello from the backup.'));
-
-    $response = (new AssistantAgent)->prompt('Hi', provider: ['primary', 'backup']);
-
-    expect($response->text)->toBe('Hello from the backup.')
-        ->and($response->meta->provider)->toBe('backup');
-
-    Sleep::assertNeverSlept();
-    Event::assertDispatched(AgentFailedOver::class);
-});

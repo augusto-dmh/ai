@@ -3,6 +3,7 @@
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Laravel\Ai\AiManager;
 use Laravel\Ai\Contracts\ConversationStore;
@@ -49,6 +50,35 @@ test('stream fails over to next provider when primary is rate limited', function
     Event::assertDispatched(AgentFailedOver::class);
 
     Event::assertDispatched(AgentStreamed::class, fn (AgentStreamed $event): bool => $event->invocationId === $response->invocationId);
+});
+
+test('stream retries a rate limited provider after its Retry-After delay before failing over', function (): void {
+    Event::fake();
+    Sleep::fake();
+
+    config([
+        'ai.providers.primary' => ['driver' => 'groq', 'key' => 'test-key'],
+        'ai.providers.backup' => ['driver' => 'groq', 'key' => 'test-key'],
+    ]);
+
+    Http::preventStrayRequests();
+
+    Http::fakeSequence()
+        ->push(status: 429, headers: ['Retry-After' => '1'])
+        ->push(fakeGroqStreamBodyForStreamFailover(), 200);
+
+    $response = (new AssistantAgent)->stream(
+        'Hello',
+        provider: ['primary', 'backup'],
+    );
+
+    foreach ($response as $_) {
+    }
+
+    expect($response->text)->toBe('Hello');
+
+    Sleep::assertSequence([Sleep::for(1)->seconds()]);
+    Event::assertNotDispatched(AgentFailedOver::class);
 });
 
 test('stream throws last exception when all providers fail', function (): void {
