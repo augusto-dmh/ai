@@ -35,54 +35,40 @@ trait DecodesStructuredOutput
     {
         $result = '';
         $containers = [];
-        $expectsKey = false;
+        $offset = 0;
 
-        for ($i = 0, $length = strlen($json); $i < $length; $i++) {
-            $char = $json[$i];
+        while (preg_match('/\G([^"]*)"/', $json, $match, offset: $offset) === 1) {
+            $structure = $match[1];
 
-            if ($char !== '"') {
-                if ($char === '{' || $char === '[') {
-                    $containers[] = $char;
-                } elseif ($char === '}' || $char === ']') {
+            preg_match_all('/[{}\[\]]/', $structure, $brackets);
+
+            foreach ($brackets[0] as $bracket) {
+                if ($bracket === '{' || $bracket === '[') {
+                    $containers[] = $bracket;
+                } else {
                     array_pop($containers);
                 }
-
-                $expectsKey = match (true) {
-                    $char === '{' => true,
-                    $char === ',' => end($containers) === '{',
-                    default => $expectsKey && ctype_space($char),
-                };
-
-                $result .= $char;
-
-                continue;
             }
 
-            $string = '';
+            $isKey = end($containers) === '{' && preg_match('/[{,]\s*$/', $structure) === 1;
 
-            for ($i++; $i < $length; $i++) {
-                if ($json[$i] === '\\') {
-                    $string .= substr($json, $i++, 2);
+            $pattern = $isKey
+                ? '/\G"((?:\\\\.|[^\\\\])*?)"(?=\s*:)/s'
+                : '/\G"((?:\\\\.|[^"\\\\])*)"/s';
 
-                    continue;
-                }
-
-                if ($json[$i] === '"') {
-                    if (! $expectsKey || preg_match('/\G\s*:/', $json, offset: $i + 1) === 1) {
-                        break;
-                    }
-
-                    $string .= '\\';
-                }
-
-                $string .= $json[$i];
+            if (preg_match($pattern, $json, $string, offset: $offset + strlen($structure)) !== 1) {
+                break;
             }
 
-            $result .= '"'.$string.'"';
-            $expectsKey = false;
+            $contents = $isKey
+                ? preg_replace_callback('/\\\\.|"/s', fn (array $token) => $token[0] === '"' ? '\\"' : $token[0], $string[1])
+                : $string[1];
+
+            $result .= $structure.'"'.$contents.'"';
+            $offset += strlen($structure) + strlen($string[0]);
         }
 
-        return $result;
+        return $result.substr($json, $offset);
     }
 
     /**
