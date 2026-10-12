@@ -119,7 +119,7 @@ test('escapes quotes left unescaped inside object keys', function (): void {
 test('escapes unescaped key quotes inside arrays and fences without touching values', function (): void {
     $host = decoderHost();
 
-    $payload = "```json\n{\"items\": [{\"Écran 16\"\": \"oui, \\\"mat\\\"\"}, {\"plain\": [\"a\", \"b\"]}]}\n```";
+    $payload = "```json\n{\"items\": [{\"Écran 16\"\" : \"oui, \\\"mat\\\"\"}, {\"plain\": [\"a\", \"b\"]}]}\n```";
 
     expect($host->decode($payload))->toBe([
         'items' => [

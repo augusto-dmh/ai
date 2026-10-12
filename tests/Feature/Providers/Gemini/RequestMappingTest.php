@@ -168,24 +168,6 @@ describe('structured output', function (): void {
         expect($response->structured['symbol'])->toBe('Fe');
     });
 
-    test('structured response with unescaped quotes inside keys is decoded', function (): void {
-        Http::fake([
-            'generativelanguage.googleapis.com/*' => Http::response($this->fakeInteraction([
-                $this->modelOutput('{"expected_attributes":{"Jutiklinė juosta ("Touch Bar")":"Yra","Ekrano įstrižainė":"16\""}}'),
-            ])),
-        ]);
-
-        $response = (new StructuredAgent)->prompt(
-            'Apple MacBook Pro 16, 2021, with the touch strip above the keyboard.',
-            provider: 'gemini',
-        );
-
-        expect($response->structured['expected_attributes'])->toBe([
-            'Jutiklinė juosta ("Touch Bar")' => 'Yra',
-            'Ekrano įstrižainė' => '16"',
-        ]);
-    });
-
     test('nested structured output keeps the item schema closed', function (): void {
         Http::fake([
             'generativelanguage.googleapis.com/*' => $this->fakeStructuredResponse([

@@ -29,7 +29,7 @@ trait DecodesStructuredOutput
     }
 
     /**
-     * Escape double quotes left unescaped inside object keys, as Gemini does while escaping them in values.
+     * Escape unescaped double quotes in object keys, where only a quote followed by a colon closes the key.
      */
     private function escapeQuotesInObjectKeys(string $json): string
     {
@@ -58,7 +58,6 @@ trait DecodesStructuredOutput
                 continue;
             }
 
-            // A value ends at the next unescaped quote, a key only at one followed by a colon...
             $string = '';
 
             for ($i++; $i < $length; $i++) {
@@ -69,7 +68,7 @@ trait DecodesStructuredOutput
                 }
 
                 if ($json[$i] === '"') {
-                    if (! $expectsKey || preg_match('/\G\s*:/', $json, $matches, 0, $i + 1) === 1) {
+                    if (! $expectsKey || preg_match('/\G\s*:/', $json, offset: $i + 1) === 1) {
                         break;
                     }
 
